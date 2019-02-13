@@ -15,6 +15,7 @@ TH32CS_SNAPTHREAD = 0x04
 THREAD_GET_CONTEXT = 0x08
 THREAD_SUSPEND_RESUME = 0x02
 THREAD_SET_CONTEXT = 0x010
+MEM_RELEASE = 0x00008000
 #get functions from windll
 OpenProcess = windll.kernel32.OpenProcess
 GetWindowThreadProcessId = windll.User32.GetWindowThreadProcessId
@@ -22,6 +23,7 @@ ReadProcessMemory = windll.kernel32.ReadProcessMemory
 WriteProcessMemory = windll.kernel32.WriteProcessMemory
 VirtualProtectEx = windll.kernel32.VirtualProtectEx
 VirtualAllocEx = windll.kernel32.VirtualAllocEx
+VirtualFreeEx = windll.kernel32.VirtualFreeEx
 GetProcessId = windll.kernel32.GetProcessId
 CloseHandle = windll.kernel32.CloseHandle
 
@@ -101,6 +103,7 @@ def assemble(mnemonics):
 
     data = pyfasm.assemble(mnemonics)
     return data
+
 def unHook(hprocess, hookAddress):
 
     curProtection = DWORD()
@@ -111,16 +114,14 @@ def unHook(hprocess, hookAddress):
     hookOpCodes = create_string_buffer(len(unHookAsm))
     hookOpCodes[:] = unHookAsm
     paddress = c_void_p(hookAddress)
-    #print("%0x"%paddress.value)
     bytesWritten = create_string_buffer(5)
     if WriteProcessMemory(hprocess, paddress, byref(hookOpCodes), 5 ,byref(bytesWritten))== False:
         print("Write didnt work")
-    print(bytesWritten.value)
     VirtualProtectEx(hprocess, hookAddress, 5, curProtection, None)
 
 
 #def Hook
-def Hook(hprocess, hookAddress, jmpAddress, len):
+def Hook(hprocess, hookAddress, jmpAddress, len, debug=False):
     #need at least 5 bytes to place a jmp
     if(len < 5):
         return False
@@ -130,32 +131,19 @@ def Hook(hprocess, hookAddress, jmpAddress, len):
         print("hook protection didnt work")
         return False
     relativeAddress = jmpAddress - hookAddress
-    print("relative address as seen in hook {}".format(hex(relativeAddress)))
-    #str = "jmp {}".format(hex(0x005A17B6))
-    #newstr = assemble(str)
-    #print("new string is")
-    #print(newstr)
+    if debug :
+        print("relative address as seen in hook {}".format(hex(relativeAddress)))
     hookAsm = assemble("jmp {}".format(hex(relativeAddress)))
-    #h1 = c_char(0xE9)
-    #h2 = relativeAddress.to_bytes(4, byteorder ='big')
-
     hookOpCodes = create_string_buffer(len)
-    #hookOpCodes[:] = [0x90,0x90,0x90,0x90,0x90]
     hookOpCodes[:] = hookAsm
-    #print(hookOpCodes.value)
-    #print(byref(hookOpCodes))
-    # bhookOpCodes = bytes(hookOpCodes)
-    # print(bhookOpCodes)
-    # k = (c_char*len(hookOpCodes))(hookOpCodes)
-    # print(k.value)
     paddress = c_void_p(hookAddress)
-    #print("%0x"%paddress.value)
     bytesWritten = create_string_buffer(len)
     if WriteProcessMemory(hprocess, paddress, byref(hookOpCodes), len,byref(bytesWritten))== False:
         print("Write didnt work")
-    print(bytesWritten.value)
+    if debug:
+        print(bytesWritten.value)
     VirtualProtectEx(hprocess, hookAddress,len, curProtection, None)
-#def GetEndscene
+
 def GetProcessThreadId(hprocess):
     entry = THREADENTRY32()
     entry.dwSize = ctypes.sizeof(entry)
@@ -168,69 +156,99 @@ def GetProcessThreadId(hprocess):
                 return entry.th32ThreadId
     CloseHandle(snapshot)
     return None
-#def SetTarget
 
-def SetTarget(hprocess, hookAddress, desiredTarget):
-    # 5 is len of hook jmp codes
+
+
+def InjectAndExecute(hprocess, caveContents, debug=False, debug_string='No Info'):
+    #Magic Number
+    endScene = 0x6B22279F
+    hookAddress = endScene
+
     relativeReturnAddress = 0x0FFFFFFF
     flagAddress = 0x0FFFFFFF
 
-    #setupcodecave
-    caveStart = '''pushfd\npushad\n'''
-    caveSetFlag = '''mov eax, {flagAddress}\nmov ebx, {value}\nmov [eax], ebx\n'''.format(flagAddress=hex(flagAddress), value = hex(0x00000001))
-    caveEnd =   '''popad\npopfd\nmov edi, edi\npush ebp\nmov ebp, esp\n'''
+    caveStart = '''
+                pushfd\n
+                pushad\n
+                '''
+    caveSetFlag ='''
+                mov eax, {flagAddress}\n
+                mov ebx, {value}\n
+                mov [eax], ebx\n
+                '''.format(flagAddress=hex(flagAddress), value = hex(0x00000001))
+    caveEnd =   '''
+                popad\n
+                popfd\n
+                mov edi, edi\n
+                push ebp\n
+                mov ebp, esp\n
+                '''
     caveRtn = "jmp {}\n".format(hex(relativeReturnAddress))
+    codecave = caveStart + caveContents + caveSetFlag + caveEnd + caveRtn
+    codecave = assemble(codecave)
+
+    #Allocate codecave memory
+    caveAddress = VirtualAllocEx(hprocess, 0, len(codecave),MEM_COMMIT, PAGE_EXECUTE_READWRITE)
+    #Allocate memory for complete flag
+    flagAddress = caveAddress + len(codecave)
+    VirtualAllocEx(hprocess, flagAddress, 4,MEM_COMMIT, PAGE_EXECUTE_READWRITE)
+    #Calculate return address
+    relativeReturnAddress = (hookAddress + 5) - caveAddress
+
+    #fill in cave variables and complete cave contruciton
+    caveRtn = "jmp {}\n".format(hex(relativeReturnAddress))
+    caveSetFlag ='''
+                mov eax, {flagAddress}\n
+                mov ebx, {value}\n
+                mov [eax], ebx\n
+                '''.format(flagAddress=hex(flagAddress), value = hex(0x00000001))
+    codecave = caveStart + caveContents + caveSetFlag + caveEnd + caveRtn
+    codecave = assemble(codecave)
+
+    if debug:
+        print("flagAddress = {}".format(hex(flagAddress)))
+        print("Codecave Address : %0x"%caveAddress)
+        print("CodecaveBytes : {}".format(codecave))
+
+    #Write codecave to memory
+    pcaveAddress = c_void_p(caveAddress)
+    caveBuffer = create_string_buffer(len(codecave))
+    caveBuffer[:] = codecave
+    if WriteProcessMemory(hprocess, pcaveAddress, byref(caveBuffer), len(codecave), None)== False:
+        print("Write didnt work")
+        return False
+
+    #Hijack thread and hook endscene
+    threadId = GetProcessThreadId(hprocess)
+    thread = OpenThread(THREAD_GET_CONTEXT|THREAD_SET_CONTEXT|THREAD_SUSPEND_RESUME,False,threadId)
+    SuspendThread(thread)
+    Hook(hprocess, hookAddress, caveAddress, 5)
+    ResumeThread(thread)
+
+    #Poll complete flag until cave has executed
+    while True:
+        if memRead(hprocess, flagAddress) != 0:
+            break
+    if debug:
+        print(debug_string)
+        print("has been executed")
+    #Restore hook
+    SuspendThread(thread)
+    unHook(hprocess, hookAddress)
+    ResumeThread(thread)
+
+    #deallocate memory
+    VirtualFreeEx(hprocess, caveAddress, len(codecave), MEM_RELEASE)
+    #free handles
+    CloseHandle(thread)
+    return True
+
+def SetTarget(hprocess, desiredTarget):
     caveContents =      '''push {guid1}\n
                         push {guid2}\n
                         mov eax,0x493540\n
                         call eax\n'''.format(guid1 = hex(desiredTarget.getGuidUpper()), guid2= hex(desiredTarget.getGuidLower()))
-    codecave1 = caveStart + caveContents + caveSetFlag + caveEnd
-    codecave1 = assemble(codecave1)
-    codecave = caveStart + caveContents + caveSetFlag + caveEnd + caveRtn
-    codecave = assemble(codecave)
-    #codecave address = allocate memory for codecave
-    address = VirtualAllocEx(hprocess, 0, len(codecave),MEM_COMMIT, PAGE_EXECUTE_READWRITE)
-    flagAddress = address + len(codecave)
-    print("flagAddress = {}".format(hex(flagAddress)))
-    VirtualAllocEx(hprocess, flagAddress, 4,MEM_COMMIT, PAGE_EXECUTE_READWRITE)
-    print("Codecave Address : %0x"%address)
-    relativeReturnAddress = (hookAddress + 5) - address
-    #fill in relative return address
-    caveRtn = "jmp {}\n".format(hex(relativeReturnAddress))
-    print("flagAddress = {}".format(hex(flagAddress)))
-    caveSetFlag = '''mov eax, {flagAddress}\nmov ebx, {value}\nmov [eax], ebx\n'''.format(flagAddress=hex(flagAddress), value = hex(0x00000001))
-    codecave = caveStart + caveContents + caveSetFlag + caveEnd + caveRtn
-    codecave = assemble(codecave)
-    print(codecave)
-    paddress = c_void_p(address)
-    caveBuffer = create_string_buffer(len(codecave))
-    caveBuffer[:] = codecave
-    if WriteProcessMemory(hprocess, paddress, byref(caveBuffer), len(codecave), None)== False:
-        print("Write didnt work")
-
-    #write codecave
-    threadId = GetProcessThreadId(hprocess)
-    thread = OpenThread(THREAD_GET_CONTEXT|THREAD_SET_CONTEXT|THREAD_SUSPEND_RESUME,False,threadId)
-
-    #pause thread
-    SuspendThread(thread)
-
-    Hook(hprocess, hookAddress, address, 5)
-    #unpause thread
-    input("press enter to continue... ")
-    ResumeThread(thread)
-    while True:
-        if memRead(hprocess, flagAddress) != 0:
-            break
-    SuspendThread(thread)
-
-    #write hook(codecave address)
-    unHook(hprocess, hookAddress)
-    #unpause thread
-    ResumeThread(thread)
-    #poll codecave done flag
-    #when done
-    #pause thread
-    #restore hook
-    #unpause
-    #retn
+    if InjectAndExecute(hprocess, caveContents):
+        return True
+    else:
+        return False

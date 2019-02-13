@@ -20,7 +20,7 @@ print("Current target guid = {}".format(hex(player.getTargetByGuid())))
 print("new target = {}".format(hex(new_target.getGuid())))
 print("new target upper GUID = {}".format(hex(new_target.getGuidUpper())))
 print("new target lower Guid = {}".format(hex(new_target.getGuidLower())))
-SetTarget(hprocess, endScene, new_target)
+SetTarget(hprocess, new_target)
 #Hook(hprocess, endScene, jmpAddress, 5)
 
 #new_target = my_object_manager.getClosestTargetToPlayer()
