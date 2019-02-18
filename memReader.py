@@ -1,6 +1,6 @@
 from ctypes import *
 from ctypes.wintypes import *
-from memoryManips import AdjustPrivilege, GetProcess, Hook, SetTarget
+from memoryManips import AdjustPrivilege, GetProcess, Hook, Injector
 from GameObjects import *
 
 AdjustPrivilege("seDebugPrivilege")
@@ -15,12 +15,20 @@ player = my_object_manager.getPlayer()
 #player.printTarget()
 endScene = 0x6B22279F
 jmpAddress = 0x831d279f
+inj = Injector(hprocess)
 new_target = my_object_manager.getClosestTargetToPlayer()
 print("Current target guid = {}".format(hex(player.getTargetByGuid())))
 print("new target = {}".format(hex(new_target.getGuid())))
 print("new target upper GUID = {}".format(hex(new_target.getGuidUpper())))
 print("new target lower Guid = {}".format(hex(new_target.getGuidLower())))
-SetTarget(hprocess, new_target)
+player.passInjector(inj)
+player.isFacing(new_target)
+player.printFacing()
+player.SetTarget(new_target)
+player.turnCharacter(new_target)
+#SetTarget(hprocess, new_target)
+#if(!isFacing(obj)):
+#    turnToTarget(obj)
 #Hook(hprocess, endScene, jmpAddress, 5)
 
 #new_target = my_object_manager.getClosestTargetToPlayer()

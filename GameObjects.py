@@ -1,8 +1,10 @@
 from ctypes import *
 from ctypes.wintypes import *
-from memoryManips import memRead, memSet, memReadUint64
+from memoryManips import memRead, memSet, memReadUint64, Injector ,memReadFloat, convertFloatToHex, convertToFloat
 import constants
 import math
+import numpy as np
+import uptime
 
 class Object():
 
@@ -83,6 +85,74 @@ class Player(UnitObject):
             super().__init__(baseObject)
         else:
             super().__init__(hprocess, address)
+        self.facing = memReadFloat(self._hprocess, self._address + constants.Player.Facing.value)
+        self.inj = None
+    def passInjector(self, inj):
+        self.inj = inj
+
+    def printFacing(self):
+        print("facing {}".format(self.facing))
+
+    def SetTarget(self, desiredTarget):
+        caveContents =      '''push {guid1}\n
+                            push {guid2}\n
+                            mov eax,0x493540\n
+                            call eax\n'''.format(guid1 = hex(desiredTarget.getGuidUpper()), guid2= hex(desiredTarget.getGuidLower()))
+        if self.inj.InjectAndExecute(self._hprocess, caveContents):
+            return True
+        else:
+            return False
+
+    def SendMovementUpdate(self, opcode, timeStamp):
+
+        caveContents =  '''
+                        mov ecx, 0x{playerPointer:0x}\n
+                        push 0x00000000\n
+                        push 0x00000000\n
+                        push 0x{opcode:0x}\n
+                        push {timeStamp}\n
+                        mov eax, 0x{SendMovementPacket:0x}\n
+                        call eax\n
+                        '''.format(playerPointer=self._address,opcode=opcode,timeStamp=convertFloatToHex(timeStamp),SendMovementPacket=constants.Functions.SendMovementPacket.value)
+        self.inj.InjectAndExecute(self._hprocess, caveContents)
+
+    def turnCharacter(self, desiredTarget):
+        f = np.arctan2(convertToFloat(desiredTarget.posY) - convertToFloat(self.posY), convertToFloat(desiredTarget.posX) - convertToFloat(self.posX))
+
+        #normalise
+        if f<0.0:
+            f = f + 2*np.pi
+        if f> 2*np.pi:
+            f = f - 2*np.pi
+        toFace = f
+        # print("playerPointer = {}".format(hex(self._address)))
+        # print("ff = {}".format(convertFloatToHex(f)))
+        # print("function = {}".format(hex(constants.Functions.SetFacing.value)))
+        caveContents =  '''
+                        mov ecx, {playerPointer}\n
+                        add ecx, 0x9A8\n
+                        push {ff}\n
+                        mov eax, 0x{setFacing:000000008x}\n
+                        call eax\n
+                        '''.format(playerPointer=hex(self._address),ff=convertFloatToHex(toFace),setFacing=constants.Functions.SetFacing.value)
+        #print("cave contents\n {}".format(caveContents))
+        self.inj.InjectAndExecute(self._hprocess, caveContents)
+        self.SendMovementUpdate(0xDA, uptime.uptime()*1000)
+
+    def isFacing(self,desiredTarget):
+        f = np.arctan2(desiredTarget.posY - self.posY, desiredTarget.posX - self.posX)
+        #normalise
+        if f < 0.0:
+            f = f + (np.pi *2)
+        if f > (np.pi*2):
+            f = f - (np.pi *2)
+
+        #print("f = {}".format(f))
+        #print("facing = {}".format(self.facing))
+        if f == self.facing:
+            return True
+        else:
+            return False
 
 class ObjectManager():
 

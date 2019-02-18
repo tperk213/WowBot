@@ -22,10 +22,12 @@ class Player(Enum):
     Name = 0x827D88
     TargetGuid = 0x74E2D8
     IsChannelingDescriptor = 0x240
+    Facing = 0x9C4
     IsCasting = 0xCECA88
     ComboPoints1 = 0xE68
     ComboPoints2 = 0x1029
     CharacterCount = 0x00B42140
+
 
 class PartyStuff(Enum):
     #uint
