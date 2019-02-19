@@ -68,7 +68,7 @@ def convertToFloat(s):
     cp = pointer(c_int(s))
     fp = cast(cp, POINTER(c_float))
     return fp.contents.value
-    
+
 def convertFloatToHex(f):
     cf = pointer(c_float(f))
     ip = cast(cf, POINTER(c_int))
@@ -112,6 +112,19 @@ def memSet(hprocess, address, desiredVal):
     #return protection to normal
     VirtualProtectEx(hprocess, paddress, bufferSize, oldProtection, None)
 
+def memStr(hprocess, str):
+    str = "{}".format(str)
+    buffer = create_string_buffer(len(str)+1)
+    buffer[:-1] = str.encode('ascii')
+    buffer[-1] = b"\0"
+    print(buffer[-1])
+    bufferSize = len(buffer)+1
+    paddress = VirtualAllocEx(hprocess, 0, bufferSize, MEM_COMMIT, PAGE_READWRITE)
+    #Write value
+    if WriteProcessMemory(hprocess, paddress, byref(buffer), bufferSize,None) == False:
+        print("WriteProcessMemory failed")
+    #return protection to normal
+    return paddress
 # Assemble from numonics
 def assemble(mnemonics):
     if "use32" not in mnemonics:
@@ -276,6 +289,16 @@ class Injector():
     def __init__(self, hprocess):
         self.endScene = GetEndscene(hprocess)
         self.hprocess = hprocess
+        self.threadId = GetProcessThreadId(self.hprocess)
+        self.thread = OpenThread(THREAD_GET_CONTEXT|THREAD_SET_CONTEXT|THREAD_SUSPEND_RESUME,False,self.threadId)
+        self.threadLocked = False
+
+    def lock(self):
+        SuspendThread(self.thread)
+        self.threadLocked = True
+    def unlock(self):
+        ResumeThread(self.thread)
+        self.threadLocked = False
 
     def InjectAndExecute(self,hprocess, caveContents, debug=False, debug_string='No Info'):
         #Magic Number
@@ -338,15 +361,17 @@ class Injector():
             return False
 
         #Hijack thread and hook endscene
-        threadId = GetProcessThreadId(hprocess)
-        thread = OpenThread(THREAD_GET_CONTEXT|THREAD_SET_CONTEXT|THREAD_SUSPEND_RESUME,False,threadId)
-        SuspendThread(thread)
+        if debug:
+            print("cave Address {}".format(hex(caveAddress)))
+            input("continue...")
 
         #print("Injecting @ {}".format(hex(hookAddress)))
         #input("cave @ {}".format(hex(caveAddress)))
+        if self.threadLocked != True:
+            self.lock()
 
         Hook(hprocess, hookAddress, caveAddress, 5)
-        ResumeThread(thread)
+        self.unlock()
 
         #Poll complete flag until cave has executed
         while True:
@@ -356,12 +381,11 @@ class Injector():
             print(debug_string)
             print("has been executed")
         #Restore hook
-        SuspendThread(thread)
+        self.lock()
         unHook(hprocess, hookAddress, 5, "mov edi, edi\npush ebp\nmov ebp, esp\n")
-        ResumeThread(thread)
+        self.unlock()
 
         #deallocate memory
         VirtualFreeEx(hprocess, caveAddress, len(codecave), MEM_RELEASE)
         #free handles
-        CloseHandle(thread)
         return True

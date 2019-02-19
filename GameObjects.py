@@ -1,63 +1,53 @@
 from ctypes import *
 from ctypes.wintypes import *
-from memoryManips import memRead, memSet, memReadUint64, Injector ,memReadFloat, convertFloatToHex, convertToFloat
+from memoryManips import memRead, memSet, memStr, memReadUint64, Injector ,memReadFloat, convertFloatToHex, convertToFloat
 import constants
 import math
 import numpy as np
 import uptime
 
+class Location():
+    def __init__(self, obj=None, xPos=None, yPos=None, zPos=None):
+        if obj != None:
+            self.x = obj.X()
+            self.y = obj.Y()
+            self.z = obj.Z()
+        else:
+            self.x = xPos
+            self.y = yPos
+            self.z = zPos
+
 class Object():
+
+    def guid(self): return memReadUint64(self._hprocess, self._address +0x30)
+    def guidLower(self): return memRead(self._hprocess, self._address +0x30)
+    def guidUpper(self): return memRead(self._hprocess, self._address +0x34)
+    def nextObjectAddress(self): return memRead(self._hprocess, self._address + 0x3c)
+    def type (self): return memRead(self._hprocess, self._address + constants.ObjectMan.ObjType.value)
 
     def __init__(self, hprocess, address):
         self._hprocess = hprocess
         self._address = address
-        self._guid = memReadUint64(self._hprocess, self._address +0x30)
-        self._guidLower = memRead(self._hprocess, self._address +0x30)
-        self._guidUpper = memRead(self._hprocess, self._address +0x34)
-        self._nextObjectAddress = memRead(self._hprocess, self._address + 0x3c)
-        self._type = memRead(self._hprocess, self._address + constants.ObjectMan.ObjType.value)
-
-
-    def nextObjectAddress(self):
-        return self._nextObjectAddress
-
-    def getType(self):
-        #print("type is %d" % self._type)
-        return self._type
-
-    def getGuid(self):
-        return self._guid
-
-    def getGuidUpper(self):
-        return self._guidUpper
-
-    def getGuidLower(self):
-        return self._guidLower
-
+        self.accesors = {}
+        self.inj = None
 
 
 class UnitObject(Object):
+    def descriptors(self):return memRead(self._hprocess, self._address + constants.ObjectMan.Descriptors.value)
+    def factionId(self):return memRead(self._hprocess, self.descriptors() + constants.Descriptors.FactionId.value)
+    def X(self):return memReadFloat(self._hprocess, self._address + constants.ObjectMan.UnitPosX.value)
+    def Y(self):return memReadFloat(self._hprocess, self._address + constants.ObjectMan.UnitPosY.value)
+    def Z(self):return memReadFloat(self._hprocess, self._address + constants.ObjectMan.UnitPosZ.value)
+    def loc(self):return Location(self)
+    def health(self):return memRead(self._hprocess, self.descriptors() + constants.Descriptors.Health.value)
+    def target(self):return memReadUint64(self._hprocess, self.descriptors() + constants.Descriptors.TargetGuid.value)
+    def movementState(self):return memRead(self._hprocess, self._address + constants.Descriptors.movementFlags.value)
+
     def __init__(self, baseObject=None, hprocess=None, address=None):
         if(baseObject):
             super().__init__(baseObject._hprocess, baseObject._address)
         else:
             super().__init__(hprocess, address)
-        self._descriptors = memRead(self._hprocess, self._address + constants.ObjectMan.Descriptors.value)
-        self._factionId = memRead(self._hprocess, self.getDescriptors() + constants.Descriptors.FactionId.value)
-        self.posX = memRead(self._hprocess, self._address + constants.ObjectMan.UnitPosX.value)
-        self.posY = memRead(self._hprocess, self._address + constants.ObjectMan.UnitPosY.value)
-        self.posZ = memRead(self._hprocess, self._address + constants.ObjectMan.UnitPosZ.value)
-        self.health = memRead(self._hprocess, self.getDescriptors() + constants.Descriptors.Health.value)
-        self.target = memReadUint64(self._hprocess, self.getDescriptors() + constants.Descriptors.TargetGuid.value)
-
-    def getDescriptors(self):
-        return self._descriptors
-
-    def getTargetByGuid(self):
-        return self.target
-
-    def getFactionId(self):
-        return self._factionId
 
     def printHealth(self):
         print("Health is %d" % self.health)
@@ -68,25 +58,33 @@ class UnitObject(Object):
     def printFaction(self):
         print("Faction id is %d" % self.getFactionId())
 
-    def getDistanceTo(self, obj):
+    def getDistanceTo(self, obj=None, location=None):
+        if obj != None:
+            loc = obj.loc()
+        else:
+            loc = location
         try:
-            return math.sqrt((obj.posX - self.posX)**2 + (obj.posY - self.posY)**2 + (obj.posZ - self.posZ)**2)
+            return math.sqrt((loc.x - self.X())**2 + (loc.y - self.Y())**2 + (loc.z - self.Z())**2)
         except:
             print("couldnt get distance")
             return
 
     def printGuid(self):
-        print("Guid is : {}".format(hex(self.getGuid())))
+        print("Guid is : {}".format(hex(self.guid())))
 
 
 class Player(UnitObject):
+    def facing(self):return memReadFloat(self._hprocess, self._address + constants.Player.Facing.value)
+
     def __init__(self, baseObject=None, hprocess=None, address=None):
         if(baseObject):
             super().__init__(baseObject)
+            if baseObject.inj:
+                self.passInjector(baseObject.inj)
         else:
             super().__init__(hprocess, address)
-        self.facing = memReadFloat(self._hprocess, self._address + constants.Player.Facing.value)
-        self.inj = None
+
+
     def passInjector(self, inj):
         self.inj = inj
 
@@ -97,7 +95,7 @@ class Player(UnitObject):
         caveContents =      '''push {guid1}\n
                             push {guid2}\n
                             mov eax,0x493540\n
-                            call eax\n'''.format(guid1 = hex(desiredTarget.getGuidUpper()), guid2= hex(desiredTarget.getGuidLower()))
+                            call eax\n'''.format(guid1 = hex(desiredTarget.guidUpper()), guid2= hex(desiredTarget.guidLower()))
         if self.inj.InjectAndExecute(self._hprocess, caveContents):
             return True
         else:
@@ -116,8 +114,12 @@ class Player(UnitObject):
                         '''.format(playerPointer=self._address,opcode=opcode,timeStamp=convertFloatToHex(timeStamp),SendMovementPacket=constants.Functions.SendMovementPacket.value)
         self.inj.InjectAndExecute(self._hprocess, caveContents)
 
-    def turnCharacter(self, desiredTarget):
-        f = np.arctan2(convertToFloat(desiredTarget.posY) - convertToFloat(self.posY), convertToFloat(desiredTarget.posX) - convertToFloat(self.posX))
+    def turnCharacter(self, desiredTarget=None, location=None):
+        if desiredTarget != None:
+            loc = desiredTarget.loc()
+        if location != None:
+            loc = location
+        f = np.arctan2(loc.y - self.Y(), loc.x - self.X())
 
         #normalise
         if f<0.0:
@@ -139,8 +141,12 @@ class Player(UnitObject):
         self.inj.InjectAndExecute(self._hprocess, caveContents)
         self.SendMovementUpdate(0xDA, uptime.uptime()*1000)
 
-    def isFacing(self,desiredTarget):
-        f = np.arctan2(desiredTarget.posY - self.posY, desiredTarget.posX - self.posX)
+    def isFacing(self,desiredTarget=None, location = None):
+        if desiredTarget != None:
+            loc = desiredTarget.loc()
+        if location != None:
+            loc = location
+        f = np.arctan2(loc.y - self.Y(), loc.x - self.X())
         #normalise
         if f < 0.0:
             f = f + (np.pi *2)
@@ -153,6 +159,85 @@ class Player(UnitObject):
             return True
         else:
             return False
+
+    def walkToTarget(self, obj, dis=1):
+        while self.getDistanceTo(obj=obj) > dis:
+            print("distance :{}".format(self.getDistanceTo(obj=obj)))
+            if self.isFacing(desiredTarget=obj) == False:
+                self.turnCharacter(desiredTarget=obj)
+            self.moveForward()
+        self.moveStop()
+        if self.isFacing(desiredTarget=obj) == False:
+            self.turnCharacter(desiredTarget=obj)
+
+
+
+    def walkToLocation(self, location=None, obj=None):
+        if location and obj == None:
+            print("Error need a location or obj to walk to")
+            return False
+        if obj != None:
+            location = obj.loc()
+        #debug
+        while self.getDistanceTo(location=location) > 0.8:
+            print("distance :{}".format(self.getDistanceTo(location=location)))
+            if self.isFacing(location=location) == False:
+                self.turnCharacter(location=location)
+            self.moveForward()
+            if obj != None:
+                location = obj.loc()
+        self.moveStop()
+
+    def updateState(self):
+        self = Player(self)
+
+    def moveForward(self):
+        #debug
+        if self.movementState() != constants.MovementFlags.Forward.value:
+            self.SetControlBit(constants.ControlBits.Front.value, 1)
+            self.SetControlBit(constants.ControlBits.Back.value, 0)
+
+    def moveStop(self):
+        if self.movementState() != constants.MovementFlags.noFlag.value:
+            self.SetControlBit(constants.ControlBits.Back.value, 0)
+            self.SetControlBit(constants.ControlBits.Front.value, 0)
+
+    def moveBackward(self):
+        if self.movementState() != constants.MovementFlags.Back.value:
+            self.SetControlBit(constants.ControlBits.Back.value, 1)
+            self.SetControlBit(constants.ControlBits.Front.value, 0)
+
+
+    def SetControlBit(self, bit, state):
+
+        caveContents =  '''
+                        mov eax, {getActive}\n
+                        call eax\n
+                        mov ecx, eax\n
+                        push 0x0\n
+                        push {uptime}\n
+                        push {state}\n
+                        push {bit}\n
+                        mov eax, {setControl}\n
+                        call eax\n
+                        '''.format(
+                                    getActive=hex(constants.Functions.CGInputControl__GetActive.value),
+                                    uptime=hex(int(uptime.uptime()*1000)),
+                                    state=hex(state),
+                                    bit=hex(bit),
+                                    setControl=hex(constants.Functions.CGInputControl__SetControlBit.value))
+        #print("cave contents at send control bit\n {}".format(caveContents))
+        self.inj.InjectAndExecute(self._hprocess, caveContents)
+
+    def Attack(self):
+        return
+
+    def doString(self, str):
+
+        paddress = memStr(self._hprocess, str)
+        print("string at {}".format(hex(paddress)))
+        input("waiting")
+
 
 class ObjectManager():
 
@@ -168,7 +253,7 @@ class ObjectManager():
 
     def _populateUnitObjList(self):
         for obj in self._objList:
-            if obj.getType() == 3:
+            if obj.type() == 3:
                 self._unitObjList.append(UnitObject(obj))
 
     def populateObjList(self):
@@ -177,7 +262,7 @@ class ObjectManager():
         self._numberOfObjects += 1
         while((curObj.nextObjectAddress() != 0) and (curObj.nextObjectAddress() % 2 == 0)):
             #Check is obj is player
-            if curObj.getGuid() == self._playerGuid:
+            if curObj.guid() == self._playerGuid:
                 self._player = Player(curObj)
             #Add obj to object list set cur obj to next obj
             self._objList.append(Object(self._hprocess, curObj.nextObjectAddress()))
@@ -198,7 +283,7 @@ class ObjectManager():
         closestObjDist = 0x0FFFFFFF
         closestObj = ''
         for obj in self._unitObjList:
-            if (self._player.getDistanceTo(obj) < closestObjDist) and obj.health > 0:
+            if (self._player.getDistanceTo(obj) < closestObjDist) and obj.health() > 0:
                 closestObj = obj
                 closestObjDist = self._player.getDistanceTo(obj)
         return closestObj
