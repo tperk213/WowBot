@@ -235,8 +235,15 @@ class Player(UnitObject):
     def doString(self, str):
 
         paddress = memStr(self._hprocess, str)
-        print("string at {}".format(hex(paddress)))
-        input("waiting")
+        caveContents =  '''
+                    mov edx, 0\n
+                    mov ecx, {stringAddress}\n
+                    mov eax, {doString}\n
+                    call eax\n
+                    '''.format(stringAddress = hex(paddress),
+                                doString = hex(constants.Functions.DoString.value))
+
+        self.inj.InjectAndExecute(self._hprocess, caveContents)
 
 
 class ObjectManager():

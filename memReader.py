@@ -2,6 +2,7 @@ from ctypes import *
 from ctypes.wintypes import *
 from memoryManips import AdjustPrivilege, GetProcess, Hook, Injector
 from GameObjects import *
+import time
 
 AdjustPrivilege("seDebugPrivilege")
 hprocess = GetProcess()
@@ -23,10 +24,20 @@ print("new target upper GUID = {}".format(hex(new_target.guidUpper())))
 print("new target lower Guid = {}".format(hex(new_target.guidLower())))
 print("player pointer is {}".format(hex(player._address)))
 player.passInjector(inj)
-#player.SetTarget(new_target)
-#player.turnCharacter(new_target)
-#player.walkToTarget(new_target, dis=5)
-player.doString("hello world")
+
+while True:
+    player.SetTarget(new_target)
+    player.turnCharacter(new_target)
+    player.walkToTarget(new_target, dis=5)
+
+    actions = [
+                "CastSpellByName('Attack');",
+                "CastSpellByName('Bloodrage');",
+                "CastSpellByName('Battle Shout');"
+                ]
+    for action in actions:
+        player.doString(action)
+        time.sleep(2)
 #SetTarget(hprocess, new_target)
 #if(!isFacing(obj)):
 #    turnToTarget(obj)

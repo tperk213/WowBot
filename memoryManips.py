@@ -117,7 +117,6 @@ def memStr(hprocess, str):
     buffer = create_string_buffer(len(str)+1)
     buffer[:-1] = str.encode('ascii')
     buffer[-1] = b"\0"
-    print(buffer[-1])
     bufferSize = len(buffer)+1
     paddress = VirtualAllocEx(hprocess, 0, bufferSize, MEM_COMMIT, PAGE_READWRITE)
     #Write value
