@@ -6,6 +6,8 @@ import win32api
 import win32con
 import sys
 import pyfasm
+import psutil
+
 
 PROCESS_ALL_ACCESS = 0x1F0FFF
 PAGE_EXECUTE_READWRITE = 0x40
@@ -63,6 +65,20 @@ def GetProcess():
     hprocess = OpenProcess(PROCESS_ALL_ACCESS, False, pid)
     print(hprocess)
     return hprocess
+
+def GetProcessA(pid):
+    hprocess = HANDLE()
+    hprocess = OpenProcess(PROCESS_ALL_ACCESS, False, pid)
+    return hprocess
+
+def GetAllWowProcess():
+    PROCNAME = "WoW.exe"
+    procs = []
+    for proc in psutil.process_iter():
+        if proc.name() == PROCNAME:
+            print(proc.pid)
+            procs.append(GetProcessA(proc.pid))
+    return procs
 
 def convertToFloat(s):
     cp = pointer(c_int(s))
@@ -299,7 +315,7 @@ class Injector():
         ResumeThread(self.thread)
         self.threadLocked = False
 
-    def InjectAndExecute(self,hprocess, caveContents, debug=False, debug_string='No Info'):
+    def InjectAndExecute(self,hprocess, caveContents, debug=False, debug_string='No Info', returnValue=False):
         #Magic Number
         endScene = self.endScene
         #print("end scene at :{}".format(hex(endScene)))
@@ -307,11 +323,17 @@ class Injector():
 
         relativeReturnAddress = 0x0FFFFFFF
         flagAddress = 0x0FFFFFFF
+        returnValueAddress = 0x0FFFFFFF
 
         caveStart = '''
                     pushfd\n
                     pushad\n
                     '''
+        caveSetReturnValue = '''
+                    mov ebx, {returnValueAddress}\n
+                    mov [ebx], eax\n
+                    '''.format(returnValueAddress=hex(returnValueAddress))
+
         caveSetFlag ='''
                     mov eax, {flagAddress}\n
                     mov ebx, {value}\n
@@ -325,14 +347,17 @@ class Injector():
                     mov ebp, esp\n
                     '''
         caveRtn = "jmp {}\n".format(hex(relativeReturnAddress))
-        codecave = caveStart + caveContents + caveSetFlag + caveEnd + caveRtn
+        codecave = caveStart + caveContents + caveSetReturnValue + caveSetFlag + caveEnd + caveRtn
         codecave = assemble(codecave)
 
         #Allocate codecave memory
         caveAddress = VirtualAllocEx(hprocess, 0, len(codecave),MEM_COMMIT, PAGE_EXECUTE_READWRITE)
-        #Allocate memory for complete flag
+        #Allocate memory for complete flag and return value
         flagAddress = caveAddress + len(codecave)
+        returnValueAddress = flagAddress + 4
+
         VirtualAllocEx(hprocess, flagAddress, 4,MEM_COMMIT, PAGE_EXECUTE_READWRITE)
+        VirtualAllocEx(hprocess, returnValueAddress, 4,MEM_COMMIT, PAGE_EXECUTE_READWRITE)
         #Calculate return address
         relativeReturnAddress = (hookAddress + 5) - caveAddress
 
@@ -343,7 +368,12 @@ class Injector():
                     mov ebx, {value}\n
                     mov [eax], ebx\n
                     '''.format(flagAddress=hex(flagAddress), value = hex(0x00000001))
-        codecave = caveStart + caveContents + caveSetFlag + caveEnd + caveRtn
+        caveSetReturnValue = '''
+                    mov ebx, {returnValueAddress}\n
+                    mov [ebx], eax\n
+                    '''.format(returnValueAddress=hex(returnValueAddress))
+
+        codecave = caveStart + caveContents + caveSetReturnValue +caveSetFlag + caveEnd + caveRtn
         codecave = assemble(codecave)
 
         if debug:
@@ -379,6 +409,8 @@ class Injector():
         if debug:
             print(debug_string)
             print("has been executed")
+        if returnValue:
+            valueToReturn = memRead(hprocess, returnValueAddress)
         #Restore hook
         self.lock()
         unHook(hprocess, hookAddress, 5, "mov edi, edi\npush ebp\nmov ebp, esp\n")
@@ -386,5 +418,10 @@ class Injector():
 
         #deallocate memory
         VirtualFreeEx(hprocess, caveAddress, len(codecave), MEM_RELEASE)
+        VirtualFreeEx(hprocess, flagAddress, 4, MEM_RELEASE)
+        VirtualFreeEx(hprocess, returnValueAddress, 4, MEM_RELEASE)
+
+        if returnValue:
+                return valueToReturn
         #free handles
         return True

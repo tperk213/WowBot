@@ -1,68 +1,31 @@
-import pyfasm
+from ctypes import *
+from ctypes.wintypes import *
+from memoryManips import AdjustPrivilege, GetProcess, Hook, Injector, GetProcessA
+from GameObjects import *
+from stateMachine import *
+import subprocess
+import time
+import threading
+from healerStates import healerSMFactory
+from warriorGrindStates import warriorSMFactory
+from States import MovementData
 
-def getOne(obj):
-    print("obj is {}".format(obj))
+AdjustPrivilege("seDebugPrivilege")
 
-class Storm():
-    func = getOne(5)
+#hprocess = GetProcess()
+# path = "C:\\Users\\Public\\Games\\World of Warcraft-Classic\\WoW.exe"
+# pid1 = subprocess.Popen(path)
+hprocess = GetProcessA(3544)
+
+input("Login then press enter")
+#setup object manager
+my_object_manager = ObjectManager(hprocess)
+my_object_manager.populateObjList()
+my_object_manager.printUnitObjects()
+player = my_object_manager.getPlayer()
 
 
-mystorm = Storm()
-mystorm.func
 
-
-
-# import pyfasm
-#
-# import numpy as np
-#
-# targetY = 31
-# targetX = 32
-# Y=30
-# X=30
-# #conversion from radians to degrees
-# # convertRadiansToDegree = 360/(2*np.pi)
-# # convertDegreeToRadians =
-# # f = np.arctan2(targetY - Y, targetX-X)
-# # print(f)
-# # f = f/(2*np.pi)
-# # print(f)
-# # f = f*360
-# # print(f)
-# # input("enter")
-#
-#
-#
-# def assemble(mnemonics):
-#     if "use32" not in mnemonics:
-#         mnemonics ="use32\n{}".format(mnemonics)
-#     if type(mnemonics) == str:
-#         mnemonics = mnemonics.encode('ascii')
-#
-#     data = pyfasm.assemble(mnemonics)
-#     return data
-#
-#
-#
-#
-# from ctypes import *
-# from ctypes.wintypes import *
-# #Test for assemble
-# endSceneVar = 0xFFFFFFFF
-# relativeReturnAddress = 0xFFFFFFFF
-# doneFlag = 0xFFFFFFFF
-# add = 0x15e80008
-# ff = 0x3f5ce272
-# function = 0x7c6f30
-# codecave =  '''
-#             mov ecx, 0x17100008\n
-#             push 0x00000000\n
-#             push 0x00000000\n
-#             push 0xda\n
-#             push 0x4b82a4aa\n
-#             mov eax, 0x{SendMovementPacket:0x}\n
-#             call eax\n
-#             '''
-# print(codecave)
-# tempCodeCave = assemble(codecave)
-# print(tempCodeCave)
+print("Player X {}".format(player.X()))
+print("Player Y {}".format(player.Y()))
+print("Player Z {}".format(player.Z()))

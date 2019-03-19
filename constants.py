@@ -59,6 +59,7 @@ class Misc(Enum):
 
 class Functions(Enum):
     #uint
+    isEnemy = 0x6061e0
     LastHardwareAction = 0x00CF0BC8
     AutoLoot = 0x4C1FA0
     ClickToMove = 0x00611130
