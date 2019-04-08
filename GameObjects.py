@@ -6,6 +6,7 @@ import math
 import numpy as np
 import uptime
 from spellMachine import SpellBook, Spell, Timer
+from States import MovementData
 
 class Location():
     def __init__(self, obj=None, xPos=None, yPos=None, zPos=None):
@@ -41,7 +42,6 @@ class Object():
         self._address = address
         self.objectManager = objectManager
         self.inj = None
-
 
 class UnitObject(Object):
     def descriptors(self):return memRead(self._hprocess, self._address + constants.ObjectMan.Descriptors.value)
@@ -121,6 +121,7 @@ class Player(UnitObject):
         #self.spellPriority = self.spellBook.priorityList
         self.casting = False
         self.globalCooldown = Timer(0.8)
+        self.moveData = None
 
     def getSpell(self, name):
         if name in self.spellBook.spells:

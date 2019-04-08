@@ -7,15 +7,16 @@ import subprocess
 import time
 import threading
 from healerStates import healerSMFactory
-from warriorGrindStates import warriorSMFactory
+#from warriorGrindStates import warriorSMFactory
 from States import MovementData
+from warriorGrindStatesV2 import warriorSMFactory
 
 AdjustPrivilege("seDebugPrivilege")
 
 #hprocess = GetProcess()
 # path = "C:\\Users\\Public\\Games\\World of Warcraft-Classic\\WoW.exe"
 # pid1 = subprocess.Popen(path)
-hprocess = GetProcessA(3544)
+hprocess = GetProcessA(5644)
 
 input("Login then press enter")
 #setup object manager
@@ -26,8 +27,8 @@ player = my_object_manager.getPlayer()
 
 #healerFactory = healerSMFactory(my_object_manager)
 #mySM = healerFactory.createHealerGeneralSM()
-warriorFactory = warriorSMFactory(my_object_manager)
-mySM = warriorFactory.createWarriorGeneralSM()
+mySM = warriorSMFactory(my_object_manager)
+
 
 # player.doString("CastSpellByName('{}')".format('Lesser Heal'))
 def testSM():
@@ -37,10 +38,8 @@ def testSM():
         if getPath and getattr(t, "path") != None:
             path = getattr(t, "path")
             getPath = False
-            moveData = MovementData(pathToFollow = path, grind=True, radius=50.1)
-            mySM.updateMoveData(moveData)
-            mySM.states['idleState'].nextState = "followPathState"
-        mySM.next()
+            mySM.player.moveData = MovementData(pathToFollow = path, grind=True, radius=50.1)
+        mySM.Update()
         time.sleep(0.5)
     print("stopping")
 
